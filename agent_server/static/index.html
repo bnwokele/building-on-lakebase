@@ -73,6 +73,9 @@
   .pill.s-pending{color:var(--pending);background:var(--pending-bg)}
   .pill.s-resolved{color:var(--resolved);background:var(--resolved-bg)}
   .pill.pri{color:var(--indigo);background:var(--indigo-bg)}
+  .pill.pri.p-high{color:var(--pending);background:var(--pending-bg)}
+  .pill.pri.p-urgent{color:#fff;background:var(--lava)}
+  .pill.sla{color:var(--muted);background:var(--surface-2);text-transform:none}
   .field{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .field select{padding:6px 10px}
   .note-row{display:flex;gap:8px}
@@ -196,7 +199,7 @@ async function loadTickets(){
   box.innerHTML=ts.map(t=>`
     <article class="card">
       <div class="ticket-head"><span class="tid">#${t.id}</span><h3 class="tsubject">${esc(t.subject)}</h3></div>
-      <div class="pills"><span class="pill s-${t.status}">${esc(t.status)}</span><span class="pill pri">${esc(t.priority)} priority</span></div>
+      <div class="pills"><span class="pill s-${t.status}">${esc(t.status)}</span><span class="pill pri p-${t.priority}">${t.priority==="urgent"?"⚡ ":""}${esc(t.priority)} priority</span>${t.sla_hours?`<span class="pill sla">${t.sla_hours}h SLA</span>`:""}</div>
       <div class="field"><label for="status-${t.id}">Status</label>
         <select id="status-${t.id}" name="status-${t.id}" aria-label="Ticket #${t.id} status" onchange="setStatus(${t.id},this.value)">${STATUSES.map(s=>`<option ${s===t.status?"selected":""}>${s}</option>`).join("")}</select></div>
       <div class="note-row"><input class="input" id="note-${t.id}" name="note-${t.id}" aria-label="Add a note to ticket #${t.id}" placeholder="Add a support note…"/><button class="btn ghost sm" onclick="addNote(${t.id})">Add</button></div>
@@ -272,6 +275,7 @@ async function confirmProposal(pid){
   const p=PROPOSALS.find(x=>x.pid===pid); if(!p)return;
   let r;
   if(p.action==="status") r=await fetch("/api/tickets/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:p.ticket_id,status:p.value,author:"agent"})});
+  else if(p.action==="priority") r=await fetch("/api/tickets/priority",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:p.ticket_id,priority:p.value,author:"agent"})});
   else if(p.action==="note") r=await fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:p.ticket_id,note:p.value,author:"agent"})});
   else {toast(`Unknown action: ${p.action}`);return;}
   if(!r||!r.ok){toast(`⚠️ Write failed (#${p.ticket_id})`);return;}

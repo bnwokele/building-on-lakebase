@@ -46,7 +46,8 @@ def search_kb(query: str) -> list:
 @function_tool
 def propose_ticket_action(ticket_id: int, action: str, value: str) -> str:
     """Propose a ticket change for human confirmation (does NOT commit).
-    action='status' (value=open|pending|resolved) or action='note' (value=note text)."""
+    action='status' (value=open|pending|resolved), action='priority' (value=low|normal|high|urgent),
+    or action='note' (value=note text)."""
     # Return a JSON *string* (not a dict): the OpenAI Agents SDK serializes a dict return with
     # Python repr() (single quotes), which isn't valid JSON — the dashboard's JSON.parse(output)
     # would then fail and the Confirm button wouldn't render. json.dumps keeps `output` valid JSON.
