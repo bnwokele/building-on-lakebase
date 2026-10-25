@@ -20,7 +20,9 @@ env:
 
 jobs:
   sweep:
-    runs-on: ubuntu-latest
+    # Set repo variable RUNNER=self-hosted if your workspace has an IP allowlist (GitHub-hosted
+    # runner IPs would be blocked); otherwise GitHub's runners are used.
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
