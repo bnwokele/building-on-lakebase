@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Support Copilot</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg fill='%23FF3621'%3E%3Cpath d='M16 4 4 10.2v3.1L16 6.9l12 6.4v-3.1z' opacity='.55'/%3E%3Cpath d='M16 12.2 4 18.4v3.1L16 15.1l12 6.4v-3.1z' opacity='.8'/%3E%3Cpath d='M16 20.4 4 26.6v-3.1L16 17.3 28 23.5v3.1z'/%3E%3C/g%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --lava:#FF3621; --lava-ink:#D92E1A; --navy:#1B3139; --ink:#11171c;
+    --muted:#5a6872; --muted-2:#8396a5; --line:#e4e7eb; --line-2:#eef1f4;
+    --bg:#f5f6f8; --surface:#ffffff; --surface-2:#fafbfc;
+    --open:#9a5b00; --open-bg:#fff3e0; --pending:#556; --pending-bg:#eef1f4;
+    --resolved:#136c3a; --resolved-bg:#e6f4ea; --indigo:#3b4bd8; --indigo-bg:#eef0ff;
+    --radius:10px; --shadow:0 1px 2px rgba(16,23,28,.04),0 1px 3px rgba(16,23,28,.06);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --navy:#e8eef2; --ink:#eef3f6; --muted:#9fb0bd; --muted-2:#7d909e;
+    --line:#2a343c; --line-2:#222c33; --bg:#0e1418; --surface:#151d23; --surface-2:#111920;
+    --open:#f0b866; --open-bg:#3a2c12; --pending:#9fb0bd; --pending-bg:#232d34;
+    --resolved:#7fd6a0; --resolved-bg:#123024; --indigo:#aeb6ff; --indigo-bg:#1e2450;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+  }}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:"DM Sans",-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);
+       -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.55}
+  .topbar{height:56px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;
+          justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:10}
+  .brand{display:flex;align-items:center;gap:10px}
+  .logomark{width:26px;height:26px;display:block}
+  .brand-name{font-weight:700;font-size:15px;color:var(--navy);letter-spacing:-.01em}
+  .brand-sub{color:var(--muted-2);font-size:12px;font-weight:500;padding-left:8px;border-left:1px solid var(--line);margin-left:2px}
+  .topbar-right{display:flex;align-items:center;gap:12px}
+  .env-chip{font-family:"DM Mono",monospace;font-size:12px;color:var(--muted);background:var(--surface-2);
+            border:1px solid var(--line);border-radius:999px;padding:4px 12px}
+  .avatar{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;
+          font-size:12px;font-weight:600}
+  .layout{max-width:1200px;margin:22px auto;padding:0 20px;display:grid;grid-template-columns:1fr 420px;gap:20px;
+          align-items:start}
+  @media (max-width:900px){.layout{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+  .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line-2)}
+  .panel-head h2{margin:0;font-size:14px;font-weight:700;color:var(--navy);display:flex;align-items:center;gap:8px;letter-spacing:-.01em}
+  .panel-body{padding:14px 16px;max-height:calc(100vh - 160px);overflow:auto}
+  .controls{display:flex;align-items:center;gap:8px}
+  label{color:var(--muted);font-size:12px;font-weight:500}
+  .select-wrap{position:relative}
+  select,input,button{font:inherit;color:var(--ink)}
+  select,input{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+  input::placeholder{color:var(--muted-2)}
+  select:focus,input:focus{outline:none;border-color:var(--lava);box-shadow:0 0 0 3px rgba(255,54,33,.12)}
+  .btn{cursor:pointer;border-radius:8px;padding:7px 14px;font-weight:600;font-size:13px;border:1px solid transparent;transition:filter .12s,background .12s}
+  .btn.primary{background:var(--lava);color:#fff}
+  .btn.primary:hover{background:var(--lava-ink)}
+  .btn.ghost{background:var(--surface);color:var(--navy);border-color:var(--line)}
+  .btn.ghost:hover{background:var(--surface-2)}
+  .btn.sm{padding:6px 10px;font-size:12px}
+
+  /* tickets */
+  .card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface)}
+  .card:last-child{margin-bottom:0}
+  .ticket-head{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .tid{font-family:"DM Mono",monospace;font-size:12px;color:var(--muted);font-weight:500}
+  .tsubject{margin:0;font-size:14px;font-weight:600;color:var(--ink)}
+  .pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .pill{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;text-transform:capitalize;letter-spacing:.01em}
+  .pill.s-open{color:var(--open);background:var(--open-bg)}
+  .pill.s-pending{color:var(--pending);background:var(--pending-bg)}
+  .pill.s-resolved{color:var(--resolved);background:var(--resolved-bg)}
+  .pill.pri{color:var(--indigo);background:var(--indigo-bg)}
+  .field{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .field select{padding:6px 10px}
+  .note-row{display:flex;gap:8px}
+  .note-row .input{flex:1;min-width:0}
+  .notes{margin-top:12px;border-top:1px solid var(--line-2);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+  .note{display:flex;gap:8px;align-items:flex-start}
+  .who{flex:none;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;text-transform:uppercase;letter-spacing:.03em;margin-top:1px}
+  .who.human{background:var(--pending-bg);color:var(--pending)}
+  .who.agent{background:rgba(255,54,33,.1);color:var(--lava-ink)}
+  .note-text{font-size:13px;color:var(--ink)}
+  .note-when{font-size:11px;color:var(--muted-2);margin-top:1px}
+  .note-empty,.empty{color:var(--muted-2);font-size:13px;padding:6px 0}
+
+  /* chat */
+  .chat-panel{display:flex;flex-direction:column;height:calc(100vh - 100px);max-height:760px}
+  .chatlog{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:14px;background:var(--surface-2)}
+  .msg{display:flex;gap:10px;max-width:100%}
+  .msg.you{justify-content:flex-end}
+  .msg .bubble{padding:9px 13px;border-radius:14px;font-size:13.5px;max-width:82%;white-space:pre-wrap;word-wrap:break-word}
+  .msg.you .bubble{background:var(--lava);color:#fff;border-bottom-right-radius:5px}
+  .msg.bot .bubble{background:var(--surface);color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .bot-avatar{flex:none;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#ff5a43,var(--lava));
+              color:#fff;display:grid;place-items:center;font-size:13px}
+  .chat-empty{margin:auto;text-align:center;color:var(--muted-2);font-size:13px;padding:24px;max-width:440px}
+  .chat-empty .big{font-size:15px;color:var(--muted);font-weight:600;margin-bottom:2px}
+  .suggests{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:14px}
+  .chip{cursor:pointer;font-size:12.5px;font-weight:500;padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--navy);transition:border-color .12s,color .12s}
+  .chip:hover{border-color:var(--lava);color:var(--lava-ink)}
+  .chip .k{color:var(--muted-2);font-weight:600;margin-right:5px}
+  #proposals{padding:0 16px}
+  .prop-hd{font-size:11px;font-weight:700;color:var(--open);margin:8px 2px 2px;text-transform:uppercase;letter-spacing:.03em}
+  .proposal{background:var(--open-bg);border:1px solid rgba(255,54,33,.25);border-radius:10px;padding:10px 12px;margin:8px 0;
+            font-size:13px;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+  .proposal .p-text{flex:1;min-width:180px;color:var(--ink)}
+  .composer{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line-2);background:var(--surface)}
+  .composer .input{flex:1;border-radius:10px;padding:10px 12px}
+  .typing{display:inline-flex;gap:3px}.typing span{width:5px;height:5px;border-radius:50%;background:var(--muted-2);animation:blink 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s}.typing span:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(8px);background:var(--navy);color:#fff;
+         padding:10px 18px;border-radius:10px;font-size:13px;font-weight:500;opacity:0;pointer-events:none;transition:all .2s;box-shadow:var(--shadow)}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logomark" viewBox="0 0 32 32" aria-hidden="true">
+      <g fill="#FF3621">
+        <path d="M16 4 4 10.2v3.1L16 6.9l12 6.4v-3.1z" opacity=".55"/>
+        <path d="M16 12.2 4 18.4v3.1L16 15.1l12 6.4v-3.1z" opacity=".8"/>
+        <path d="M16 20.4 4 26.6v-3.1L16 17.3 28 23.5v3.1z"/>
+      </g>
+    </svg>
+    <span class="brand-name">Support Copilot</span>
+    <span class="brand-sub">on Lakebase</span>
+  </div>
+  <div class="topbar-right">
+    <span class="env-chip">lakebase-customer-support</span>
+    <div class="avatar">MD</div>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Tickets</h2>
+      <div class="controls">
+        <label for="cust">Customer</label>
+        <select id="cust" name="cust" aria-label="Select customer"></select>
+        <button class="btn ghost sm" onclick="loadTickets()">Refresh</button>
+      </div>
+    </div>
+    <div id="tickets" class="panel-body"></div>
+  </section>
+
+  <section class="panel chat-panel">
+    <div class="panel-head"><h2><span class="bot-avatar" style="width:20px;height:20px;font-size:11px">✦</span> Copilot</h2>
+      <button class="btn ghost sm" onclick="newChat()" title="Start a new conversation (new thread) — long-term memory (by user) persists">＋ New chat</button></div>
+    <div id="chatlog" class="chatlog"><div class="chat-empty">
+      <div class="big">How can I help?</div>
+      Try one of these to see each capability:
+      <div class="suggests">
+        <button class="chip" onclick="suggest('Why do nightly sync jobs fail around 2 a.m., and how do I fix it?')"><span class="k">Search</span>Nightly sync failures</button>
+        <button class="chip" onclick="suggest('Remember that I prefer email updates over phone, and I own the Acme Robotics account.')"><span class="k">Memory</span>Save a preference</button>
+        <button class="chip" onclick="suggest('What do you know about me, and how do I prefer to be contacted?')"><span class="k">Memory</span>Recall (try in a new chat)</button>
+        <button class="chip" onclick="suggest('Give me a briefing on Acme Robotics — their tickets and account health.')"><span class="k">Context</span>Brief me on Acme Robotics</button>
+        <button class="chip" onclick="suggest('Now mark that customer’s open ticket as resolved and add a note that we rotated the token.')"><span class="k">Write</span>Resolve + note (ask as follow-up)</button>
+      </div>
+    </div></div>
+    <div id="proposals"></div>
+    <div class="composer">
+      <input class="input" id="chatinput" name="chatinput" aria-label="Message the copilot" placeholder="Message the copilot…" onkeydown="if(event.key==='Enter')sendChat()" autocomplete="off"/>
+      <button class="btn primary" onclick="sendChat()">Send</button>
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const USER="demo-user@example.com";  // fallback user_id for local dev; the deployed app uses the authenticated user (X-Forwarded-Email)
+let THREAD="t-"+Math.random().toString(36).slice(2);
+const STATUSES=["open","pending","resolved"];
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),1900);}
+
+// ---------- tickets ----------
+async function loadCustomers(){
+  const cs=await (await fetch("/api/customers")).json();
+  const sel=document.getElementById("cust");
+  sel.innerHTML=cs.map(c=>`<option value="${c.id}">${esc(c.name)} · ${esc(c.tier)}</option>`).join("");
+  sel.onchange=loadTickets; loadTickets();
+}
+async function loadTickets(){
+  const id=document.getElementById("cust").value;
+  const ts=await (await fetch(`/api/tickets?customer_id=${id}`)).json();
+  const box=document.getElementById("tickets");
+  if(!ts.length){box.innerHTML=`<div class="empty">No tickets for this customer.</div>`;return;}
+  box.innerHTML=ts.map(t=>`
+    <article class="card">
+      <div class="ticket-head"><span class="tid">#${t.id}</span><h3 class="tsubject">${esc(t.subject)}</h3></div>
+      <div class="pills"><span class="pill s-${t.status}">${esc(t.status)}</span><span class="pill pri">${esc(t.priority)} priority</span></div>
+      <div class="field"><label for="status-${t.id}">Status</label>
+        <select id="status-${t.id}" name="status-${t.id}" aria-label="Ticket #${t.id} status" onchange="setStatus(${t.id},this.value)">${STATUSES.map(s=>`<option ${s===t.status?"selected":""}>${s}</option>`).join("")}</select></div>
+      <div class="note-row"><input class="input" id="note-${t.id}" name="note-${t.id}" aria-label="Add a note to ticket #${t.id}" placeholder="Add a support note…"/><button class="btn ghost sm" onclick="addNote(${t.id})">Add</button></div>
+      <div class="notes" id="notes-${t.id}"></div>
+    </article>`).join("");
+  ts.forEach(t=>loadNotes(t.id));
+}
+async function loadNotes(id){
+  const ns=await (await fetch(`/api/notes?ticket_id=${id}`)).json();
+  const el=document.getElementById(`notes-${id}`); if(!el)return;
+  el.innerHTML=ns.length?ns.map(n=>`
+    <div class="note"><span class="who ${n.author==="agent"?"agent":"human"}">${n.author==="agent"?"AI":"You"}</span>
+    <div><div class="note-text">${esc(n.note)}</div><div class="note-when">${new Date(n.created_at).toLocaleString()}</div></div></div>`).join("")
+    :`<div class="note-empty">No notes yet.</div>`;
+}
+async function setStatus(id,status){
+  await fetch("/api/tickets/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:id,status})});
+  toast(`Ticket #${id} → ${status}`); loadTickets();
+}
+async function addNote(id){
+  const inp=document.getElementById(`note-${id}`); const note=inp.value.trim(); if(!note)return;
+  await fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:id,note})});
+  inp.value=""; toast(`Note added to #${id}`); loadNotes(id);
+}
+
+// ---------- copilot ----------
+function addMsg(role,text,typing){
+  const log=document.getElementById("chatlog");
+  const empty=log.querySelector(".chat-empty"); if(empty)empty.remove();
+  const d=document.createElement("div"); d.className=`msg ${role}`;
+  d.innerHTML=(role==="bot"?`<div class="bot-avatar">✦</div>`:"")+`<div class="bubble"></div>`;
+  const b=d.querySelector(".bubble");
+  if(typing){b.innerHTML=`<span class="typing"><span></span><span></span><span></span></span>`;}else{b.textContent=text;}
+  log.appendChild(d); log.scrollTop=log.scrollHeight; return b;
+}
+function suggest(t){const i=document.getElementById("chatinput");i.value=t;sendChat();}
+async function sendChat(){
+  const inp=document.getElementById("chatinput"); const msg=inp.value.trim(); if(!msg)return;
+  inp.value=""; addMsg("you",msg); const bubble=addMsg("bot","",true);
+  try{
+    // /responses is the standard MLflow ResponsesAgent (OpenAI Responses API) endpoint — the
+    // idiomatic, portable contract for the agent. (/invocations is the equivalent MLflow-serving
+    // door and accepts the identical body/returns the identical envelope.)
+    const res=await fetch("/responses",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({input:[{role:"user",content:msg}],custom_inputs:{user_id:USER,thread_id:THREAD}})});
+    if(!res.ok){bubble.textContent=`⚠️ Agent error (${res.status}).`;return;}
+    const data=await res.json();
+    let reply=""; const proposals=[];
+    for(const it of (data.output||[])){
+      if(it.type==="message"){for(const c of (it.content||[])){if(c.type==="output_text")reply=c.text;}}
+      if(it.type==="function_call_output"){try{const o=typeof it.output==="string"?JSON.parse(it.output):it.output; if(o&&o.type==="proposal")proposals.push(o);}catch(e){}}
+    }
+    bubble.textContent=reply||"(no reply)";
+    document.getElementById("chatlog").scrollTop=1e9;
+    addProposals(proposals);
+  }catch(e){bubble.textContent="⚠️ "+e;}
+}
+
+// Pending proposals PERSIST across chat turns until the user Confirms/Discards (a later turn
+// with no proposal no longer wipes them). Stable per-proposal id so indices don't shift.
+let PROPOSALS=[]; let _pid=0;
+function addProposals(ps){ for(const p of ps){ p.pid=++_pid; PROPOSALS.push(p); } renderProposals(); }
+function renderProposals(){
+  const box=document.getElementById("proposals");
+  if(!PROPOSALS.length){ box.innerHTML=""; return; }
+  box.innerHTML='<div class="prop-hd">⏳ Needs your confirmation — click Confirm to apply</div>'+
+    PROPOSALS.map(p=>`<div class="proposal" id="prop-${p.pid}"><span class="p-text">Proposed · ticket #${p.ticket_id} · ${esc(p.action)} → <b>${esc(p.value)}</b></span>
+    <button class="btn primary sm" onclick="confirmProposal(${p.pid})">Confirm</button>
+    <button class="btn ghost sm" onclick="discardProposal(${p.pid})">Discard</button></div>`).join("");
+}
+function discardProposal(pid){ PROPOSALS=PROPOSALS.filter(p=>p.pid!==pid); renderProposals(); }
+async function confirmProposal(pid){
+  const p=PROPOSALS.find(x=>x.pid===pid); if(!p)return;
+  let r;
+  if(p.action==="status") r=await fetch("/api/tickets/status",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:p.ticket_id,status:p.value,author:"agent"})});
+  else if(p.action==="note") r=await fetch("/api/notes",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({ticket_id:p.ticket_id,note:p.value,author:"agent"})});
+  else {toast(`Unknown action: ${p.action}`);return;}
+  if(!r||!r.ok){toast(`⚠️ Write failed (#${p.ticket_id})`);return;}
+  toast(`Applied to #${p.ticket_id}`); PROPOSALS=PROPOSALS.filter(x=>x.pid!==pid); renderProposals(); loadTickets();
+}
+
+// New chat: fresh thread (clears short-term/thread memory) + clears the transcript & proposals.
+// Long-term memory is keyed on user_id, so it PERSISTS across new chats (that's the recall demo).
+const EMPTY_CHAT=document.getElementById("chatlog").innerHTML;
+function newChat(){
+  THREAD="t-"+Math.random().toString(36).slice(2);
+  PROPOSALS=[]; renderProposals();
+  document.getElementById("chatlog").innerHTML=EMPTY_CHAT;
+  toast("New chat started");
+}
+
+loadCustomers();
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+bundle:
+  name: support_copilot
+  # Pin the Terraform deployment engine. The CLI's new default "direct" engine (v1.17+) panics
+  # in ResourceApp.OverrideChangeDesc (nil-pointer, bundle/direct app.go:264) on any *change* to
+  # this `apps` resource — a fresh create plans fine, but every re-deploy/update crashes, so an
+  # isolated target is not enough on its own. Remove this once the CLI bug is fixed. A
+  # `bundle.engine` setting takes priority over the DATABRICKS_BUNDLE_ENGINE env var.
+  engine: terraform
+
+# Everything that varies per workspace/deployment is a variable — nothing is hardcoded in the
+# resources below. Override any of them without editing this file, e.g.:
+#   databricks bundle deploy --var uc_catalog=my_cat --var lakebase_project=my-proj
+# The defaults reproduce the current demo setup.
+variables:
+  app_name:
+    description: Databricks App name.
+    default: customer-support-copilot
+  lakebase_project:
+    description: Lakebase autoscaling project id.
+    default: lakebase-customer-support
+  lakebase_branch:
+    description: Lakebase branch.
+    default: production
+  lakebase_database:
+    description: Lakebase LOGICAL database name (underscore) — used by synced_database_tables.postgres_database and psql.
+    default: databricks_postgres
+  lakebase_database_resource:
+    description: >-
+      Lakebase database RESOURCE name (kebab-case) — the last path segment of the `postgres` app
+      resource's database path. Usually the kebab-case of lakebase_database. Verify with:
+      databricks api get /api/2.0/postgres/projects/<project>/branches/<branch>/databases
+    default: databricks-postgres
+  uc_catalog:
+    description: Unity Catalog catalog holding the KB + customer_360 Delta sources.
+    default: main
+  uc_schema:
+    description: UC schema holding the Delta sources (kb_articles, customer_360).
+    default: customer_support
+  operational_schema:
+    description: Postgres schema for operational tables (tickets/customers/notes).
+    default: customer_support
+  synced_schema:
+    description: Postgres schema the synced tables land in.
+    default: kb_synced
+  search_path:
+    description: >-
+      Full Postgres search_path for the app. The pgvector `vector` TYPE and the Lakebase Search
+      extensions live in `public`, so operational + synced + public covers KB search. Long-term
+      memory is Databricks-managed (REST), so no agent_memory schema is involved.
+    default: "customer_support, kb_synced, public"
+  llm_endpoint:
+    description: Chat model serving endpoint.
+    default: databricks-claude-sonnet-4-5
+  embedding_endpoint:
+    description: Embedding serving endpoint (KB search + long-term memory).
+    default: databricks-gte-large-en
+  memory_store:
+    description: >-
+      Managed memory store name. Backing databases (memory-<name>) live in a shared Databricks-managed
+      project, so a name already used elsewhere can fail create ("already exists") even though get/list
+      in this workspace find nothing — pick a unique name per workspace.
+    default: support-copilot
+  session_store:
+    description: Managed session store name.
+    default: support-copilot
+
+# Keep the app upload lean and correct: the template's separate Node chat UI is unused
+# (chat proxy is off), and local artifacts/venvs must not ship. sql/ and lakehouse/ ARE
+# kept — they're the manual snippets you run against Lakebase/the lakehouse post-deploy.
+sync:
+  exclude:
+    - ".venv"
+    - "**/__pycache__"
+    - "*.log"
+    - ".DS_Store"
+    - ".env"                      # never ship local creds/config; endpoint comes from resources
+    - ".env.example"
+    # *.md (README, DEPLOY) ARE shipped so they land in the workspace alongside the app.
+    # They're inert at runtime (the app never serves them).
+
+resources:
+  # DABs-managed MLflow experiment — created on `bundle deploy`, so no experiment needs to exist
+  # first. The name is bundle+target-specific so it won't collide with any hand-made experiment;
+  # the app binds it by .id below. Re-deploys reconcile this (idempotent, no failure).
+  experiments:
+    support_copilot_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-${bundle.target}
+
+  apps:
+    support_copilot:
+      name: ${var.app_name}
+      description: "Support copilot — OpenAI Agents SDK ResponsesAgent with hybrid Lakebase Search + managed session/memory"
+      source_code_path: ./
+      config:
+        # start-server (not start-app): chat proxy is off; we serve our own UI from webapp.py.
+        command: ["uv", "run", "start-server"]
+        env:
+          - name: MLFLOW_TRACKING_URI
+            value: "databricks"
+          - name: MLFLOW_REGISTRY_URI
+            value: "databricks-uc"
+          - name: MLFLOW_EXPERIMENT_ID
+            value_from: "experiment"
+          # The `database` app resource injects the autoscaling endpoint here (endpoint mode).
+          - name: LAKEBASE_AUTOSCALING_ENDPOINT
+            value_from: "database"
+          - name: LAKEBASE_SCHEMA
+            value: ${var.operational_schema}
+          - name: LAKEBASE_SYNCED_SCHEMA
+            value: ${var.synced_schema}
+          - name: LAKEBASE_SEARCH_PATH
+            value: ${var.search_path}
+          - name: LLM_ENDPOINT
+            value: ${var.llm_endpoint}
+          - name: DATABRICKS_EMBEDDING_ENDPOINT
+            value: ${var.embedding_endpoint}
+          # ── Databricks managed sessions + memory ──
+          # Same name for both — the memory-store and session-store namespaces are separate, so they
+          # don't collide. Auto-created by the app service principal on first use.
+          - name: MANAGED_MEMORY_STORE
+            value: ${var.memory_store}
+          - name: MANAGED_SESSION_STORE
+            value: ${var.session_store}
+          - name: LOG_LEVEL
+            value: "INFO"
+          # Package-install resilience: raise uv's per-download timeout (default 30s) and cut
+          # parallel downloads so large wheels don't time out during the build.
+          - name: UV_HTTP_TIMEOUT
+            value: "600"
+          - name: UV_CONCURRENT_DOWNLOADS
+            value: "1"
+
+      # Resources this app can access.
+      resources:
+        - name: 'experiment'
+          experiment:
+            # Bind the DABs-managed experiment above (created in this same deploy). The app SP
+            # gets CAN_MANAGE so /invocations traces land here.
+            experiment_id: ${resources.experiments.support_copilot_experiment.id}
+            permission: 'CAN_MANAGE'
+        # Resource KEY is 'database' (referenced by value_from above); resource TYPE is `postgres`
+        # (autoscaling Lakebase — project/branch model). The key is just a label.
+        - name: 'database'
+          postgres:
+            branch: "projects/${var.lakebase_project}/branches/${var.lakebase_branch}"
+            # Full database RESOURCE path (kebab-case name), not the logical name — matches the API.
+            database: "projects/${var.lakebase_project}/branches/${var.lakebase_branch}/databases/${var.lakebase_database_resource}"
+            permission: 'CAN_CONNECT_AND_CREATE'
+        # NOTE: no serving_endpoint resources. The default LLM + embedding endpoints are
+        # Foundation Model API *system* endpoints (no id / no per-endpoint ACL) — access is a
+        # workspace-level entitlement, so the app SP reaches them via ambient auth with nothing
+        # to grant. The endpoint NAMES come from ${var.llm_endpoint}/${var.embedding_endpoint}
+        # above. If you point those at a CUSTOM / provisioned-throughput / external endpoint
+        # (which has an id + ACL), add a `serving_endpoint` resource with `permission: CAN_QUERY`.
+
+  # NOTE: synced tables are NOT a DABs resource here — they're created BEFORE deploy via the SDK
+  # (scripts/create_synced_tables.py: TRIGGERED sync, embedding->vector(1024), generated body_tsv),
+  # so schema + data are ready before the app comes up. The bundle only manages the app +
+  # experiment (+ the postgres resource that grants the app SP access + injects the endpoint).
+
+targets:
+  dev:
+    mode: development
+    default: true
+  # Isolated target for test deploys — its own state, so it never touches the dev deployment
+  # (e.g. the csp-openai app) and a fresh state lets `bundle.engine: terraform` take effect.
+  test:
+    mode: development
+  prod:
+    mode: production

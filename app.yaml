@@ -1,0 +1,49 @@
+# Databricks App run spec. We serve our OWN single-page UI (dashboard + chat) from
+# webapp.py, so we run the agent server directly with `start-server` — NOT `start-app`
+# (which also boots the template's separate Node chat UI + proxy; disabled here via
+# enable_chat_proxy=False in start_server.py).
+#
+# Databricks Apps listen on port 8000 by default — the same port we use locally.
+# NOTE: env values that use `valueFrom` are injected from the app's resources
+# (see databricks.yml). The bundle's resources.apps.*.config block is the source of
+# truth on deploy and mirrors this file.
+command: ["uv", "run", "start-server"]
+
+env:
+  - name: MLFLOW_TRACKING_URI
+    value: "databricks"
+  - name: MLFLOW_REGISTRY_URI
+    value: "databricks-uc"
+  - name: MLFLOW_EXPERIMENT_ID
+    valueFrom: "experiment"
+  # Lakebase — the `postgres` app resource injects the autoscaling endpoint here. The valueFrom key
+  # must match the resource NAME you bind ("postgres"), not its type. db.py and the memory store both
+  # read this and prefer it over PROJECT/BRANCH (which are local-only).
+  - name: LAKEBASE_AUTOSCALING_ENDPOINT
+    valueFrom: "postgres"
+  - name: LAKEBASE_SCHEMA
+    value: "customer_support"
+  - name: LAKEBASE_SYNCED_SCHEMA
+    value: "kb_synced"
+  # Long-term memory is Databricks-MANAGED (AgentKit REST), so the app never touches an
+  # agent_memory Postgres schema — no LAKEBASE_AGENT_MEMORY_SCHEMA. The pgvector `vector` type
+  # for KB search lives in `public`, so `public` in the search_path is all KB vector search needs.
+  - name: LAKEBASE_SEARCH_PATH
+    value: "customer_support, kb_synced, public"
+  - name: LLM_ENDPOINT
+    value: "databricks-claude-sonnet-4-5"
+  - name: DATABRICKS_EMBEDDING_ENDPOINT
+    value: "databricks-gte-large-en"
+  # ── Databricks managed sessions + memory ──────────────────────────────────────
+  - name: MANAGED_MEMORY_STORE
+    value: "support-copilot"
+  - name: MANAGED_SESSION_STORE
+    value: "support-copilot"
+  - name: LOG_LEVEL
+    value: "INFO"
+  # Package-install resilience: raise uv's per-download timeout (default 30s) and cut parallel
+  # downloads so large wheels don't time out during the build.
+  - name: UV_HTTP_TIMEOUT
+    value: "600"
+  - name: UV_CONCURRENT_DOWNLOADS
+    value: "1"
