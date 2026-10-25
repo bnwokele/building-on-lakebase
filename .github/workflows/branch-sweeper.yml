@@ -25,7 +25,9 @@ jobs:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+      # Self-hosted runners use the machine's own uv (and its cache), so skip the install.
       - uses: astral-sh/setup-uv@v6
+        if: runner.environment == 'github-hosted'
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
