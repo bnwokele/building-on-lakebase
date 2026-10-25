@@ -1,0 +1,88 @@
+# Every pull request gets its own Lakebase database: a copy-on-write branch of production
+# (schema + data, ready in seconds). The PR's migrations and tests run there — production is
+# never touched. pr-cleanup.yml deletes the branch when the PR closes.
+name: PR database branch
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: pr-db-${{ github.event.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+defaults:
+  run:
+    shell: bash  # -eo pipefail, so `| tee` keeps the real exit code
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+  DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+  LAKEBASE_AUTOSCALING_PROJECT: ${{ vars.LAKEBASE_AUTOSCALING_PROJECT }}
+  LAKEBASE_SCHEMA: ${{ vars.LAKEBASE_SCHEMA }}
+  LAKEBASE_SYNCED_SCHEMA: ${{ vars.LAKEBASE_SYNCED_SCHEMA }}
+  LAKEBASE_SEARCH_PATH: ${{ vars.LAKEBASE_SEARCH_PATH }}
+  LAKEBASE_AUTOSCALING_BRANCH: ci-pr-${{ github.event.number }}
+
+jobs:
+  test-on-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Create Lakebase branch from production
+        id: branch
+        run: uv run python scripts/branch.py create "$LAKEBASE_AUTOSCALING_BRANCH"
+
+      - name: Run migrations on the PR branch
+        id: migrate
+        run: uv run python scripts/migrate.py 2>&1 | tee migrate.log
+
+      - name: Run tests against the PR branch
+        id: test
+        run: uv run pytest tests -n0 -q -p no:cacheprovider 2>&1 | tee pytest.log
+
+      - name: Build PR comment
+        if: always()
+        run: |
+          icon() { case "$1" in success) echo "✅";; failure) echo "❌";; *) echo "⏭️";; esac; }
+          {
+            echo "### 🌿 Lakebase branch \`$LAKEBASE_AUTOSCALING_BRANCH\`"
+            echo
+            echo "A copy-on-write copy of \`production\` (schema + data) for this PR. Deleted when the PR closes."
+            echo
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| Create branch | $(icon '${{ steps.branch.outcome }}') |"
+            echo "| Migrate | $(icon '${{ steps.migrate.outcome }}') |"
+            echo "| Tests | $(icon '${{ steps.test.outcome }}') |"
+            echo
+            if [ -f migrate.log ]; then
+              echo "<details><summary>Migration output</summary>"; echo; echo '```'; cat migrate.log; echo '```'; echo "</details>"
+            fi
+            if [ -f pytest.log ]; then
+              echo "<details><summary>Test output</summary>"; echo; echo '```'; tail -n 40 pytest.log; echo '```'; echo "</details>"
+            fi
+            echo
+            echo "[Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } > comment.md
+
+      - name: Comment on PR
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: lakebase-branch
+          path: comment.md

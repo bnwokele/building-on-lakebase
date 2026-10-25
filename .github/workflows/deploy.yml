@@ -1,0 +1,75 @@
+# Merge to main = release. After a human approves the `production` environment (the "DBA gate"),
+# the SAME migration files that passed on the PR's branch run on production, then the app is
+# deployed with `databricks bundle deploy` — the same command you run locally.
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+  DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+  LAKEBASE_AUTOSCALING_PROJECT: ${{ vars.LAKEBASE_AUTOSCALING_PROJECT }}
+  LAKEBASE_AUTOSCALING_BRANCH: production
+  LAKEBASE_SCHEMA: ${{ vars.LAKEBASE_SCHEMA }}
+  LAKEBASE_SYNCED_SCHEMA: ${{ vars.LAKEBASE_SYNCED_SCHEMA }}
+  LAKEBASE_SEARCH_PATH: ${{ vars.LAKEBASE_SEARCH_PATH }}
+  PROD_APP_NAME: ${{ vars.PROD_APP_NAME }}
+  # Bundle variables (databricks.yml) come from the environment as BUNDLE_VAR_<name>.
+  BUNDLE_VAR_lakebase_project: ${{ vars.LAKEBASE_AUTOSCALING_PROJECT }}
+  BUNDLE_VAR_operational_schema: ${{ vars.LAKEBASE_SCHEMA }}
+  BUNDLE_VAR_synced_schema: ${{ vars.LAKEBASE_SYNCED_SCHEMA }}
+  BUNDLE_VAR_search_path: ${{ vars.LAKEBASE_SEARCH_PATH }}
+  BUNDLE_VAR_uc_catalog: ${{ vars.UC_CATALOG }}
+  BUNDLE_VAR_uc_schema: ${{ vars.UC_SCHEMA }}
+  BUNDLE_VAR_app_name: ${{ vars.PROD_APP_NAME }}
+  BUNDLE_VAR_memory_store: ${{ vars.MANAGED_MEMORY_STORE }}
+  BUNDLE_VAR_session_store: ${{ vars.MANAGED_SESSION_STORE }}
+  BUNDLE_VAR_owner_user: ${{ vars.OWNER_USER }}
+  BUNDLE_VAR_ci_service_principal: ${{ secrets.DATABRICKS_CLIENT_ID }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production  # required reviewer -> the run waits for approval here
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - uses: databricks/setup-cli@main
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Migrate production
+        run: uv run python scripts/migrate.py
+
+      - name: Deploy app (bundle)
+        run: databricks bundle deploy -t prod
+
+      - name: Start app
+        run: databricks bundle run support_copilot -t prod
+
+      - name: Grant the app on Lakebase
+        run: uv run python scripts/grant_app.py --app "$PROD_APP_NAME"
+
+      - name: Smoke test
+        run: uv run python scripts/smoke_app.py --app "$PROD_APP_NAME"

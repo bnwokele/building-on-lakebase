@@ -63,6 +63,12 @@ variables:
   session_store:
     description: Managed session store name.
     default: support-copilot
+  owner_user:
+    description: (prod) Your workspace user — CAN_MANAGE on the prod app so you can deploy/reset it too.
+    default: ""
+  ci_service_principal:
+    description: (prod) Application ID of the CI service principal (scripts/setup_ci.py).
+    default: ""
 
 # Keep the app upload lean and correct: the template's separate Node chat UI is unused
 # (chat proxy is off), and local artifacts/venvs must not ship. sql/ and lakehouse/ ARE
@@ -166,5 +172,23 @@ targets:
   # (e.g. the csp-openai app) and a fresh state lets `bundle.engine: terraform` take effect.
   test:
     mode: development
+  # Ep3: deployed by GitHub Actions (.github/workflows/deploy.yml) after the `production`
+  # environment approval. State lives under /Shared so CI and you deploy the SAME app (e.g.
+  # scripts/demo_reset.py --app). Its own app name, so the Ep2 app is never touched.
   prod:
     mode: production
+    workspace:
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      app_name: support-copilot-ep3
+      memory_store: support-copilot-ep3
+      session_store: support-copilot-ep3
+    permissions:
+      - level: CAN_MANAGE
+        user_name: ${var.owner_user}
+      - level: CAN_MANAGE
+        service_principal_name: ${var.ci_service_principal}
+    resources:
+      experiments:
+        support_copilot_experiment:
+          name: /Shared/${bundle.name}-${bundle.target}

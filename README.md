@@ -1,124 +1,107 @@
-# Customer Support Copilot on Databricks Apps + Lakebase
+# Building on Lakebase
 
-A customer-support copilot built as a **Databricks App**, on the **OpenAI Agents SDK (using** `agent-openai-agents-sdk` [template)](https://github.com/databricks/app-templates/tree/main/agent-openai-agents-sdk), with **Databricks managed sessions + memory** and **Lakebase** for operational data and hybrid search.
+Code for the **Building on Lakebase** skill builder series. Every episode works on the same app: a
+**Support Copilot** (an agent plus a tickets dashboard) on Databricks Apps, with **Lakebase** (managed
+Postgres) as its database.
 
-It serves a single web page — an operational **tickets dashboard** and a **chat copilot** — backed by
-one Databricks App that runs the agent and the dashboard API.
+| Episode | Topic | In this repo |
+|---|---|---|
+| 1. Meet Lakebase | Projects, tables, synced tables | `sql/`, `lakehouse/`, `scripts/create_synced_tables.py` |
+| 2. Anatomy of an AI App | Agent + dashboard on one Postgres | `agent_server/`. See **[APP.md](APP.md)** and **[DEPLOY.md](DEPLOY.md)** |
+| **3. Branch, Test, and Ship** | **Every pull request gets its own database** | `scripts/branch.py`, `sql/migrations/`, `tests/`, `.github/workflows/` |
+| 4. Operate and Recover | Monitoring, PITR, recovery | coming soon |
 
-## What it does
+Tag `ep2-baseline` is the app as it was at the end of Episode 2.
 
-- **Grounded answers.** The agent looks up a customer's profile and tickets and searches a knowledge
-base before answering, instead of guessing.
-- **Remembers the conversation** (short-term) and **remembers the user across conversations**
-(long-term) using Databricks managed state — no memory database to run yourself.
-- **Acts safely.** When the agent wants to change a ticket, it *proposes* the change; a human confirms
-in the UI before anything is written, and the change is recorded as made by the agent.
-- **Observable.** Every turn is traced to MLflow automatically.
+---
 
+## Episode 3: every pull request gets its own Lakebase database
 
-
-## Architecture
-
-The app talks to **two Lakebase projects, two different ways**: *your* project over a direct Postgres
-connection, and a *Databricks-managed* project over a REST API.
+A Lakebase **branch** is a copy-on-write clone of `production`: schema *and* data. It is ready in
+seconds and scales to zero when idle. This repo uses a branch for every PR:
 
 ```
-          ┌─────────────────────────────────────────────────────────────┐
-          │                   Browser — one web page                     │
-          │          Tickets panel        │        Copilot chat          │
-          └───────────┬───────────────────────────────────┬─────────────┘
-                      │ /api/*                             │ /responses
-                      ▼                                    ▼
-          ┌─────────────────────────────────────────────────────────────┐
-          │  Databricks App "customer-support-copilot" (OpenAI Agents SDK)│
-          │     runs as a SERVICE PRINCIPAL (SP)                          │
-          │                                                               │
-          │   /api routes (webapp.py)      MLflow ResponsesAgent          │
-          │        │                       → Agent + Runner (agent.py)    │
-          │        │                   tools: search_customer ·           │
-          │        │                   search_kb · propose_ticket ·       │
-          │        │                   search_memory · save_memory        │
-          │        ▼                        │              │              │
-          │   db.py → LakebasePool    managed.py: session_store + memory  │
-          └──────────┬──────────────────────┬──────────────┬─────────────┘
-                     │                       │              │
-      DIRECT POSTGRES│ (psycopg)       REST  │ (databricks-sdk / AgentKit)
-      OAuth token AS │ the password          │ bearer OAuth, auto-rotated
-                     ▼                       ▼              ▼
-   ┌──────────────────────────┐  ┌───────────────────────────────────────────┐
-   │  YOUR Lakebase project   │  │  Databricks-managed project                 │
-   │   customer_support (rw)  │  │   memory store  → database  memory-<name>   │
-   │   kb_synced (synced +    │  │   session store → session items             │
-   │     vector + bm25 search)│  │   • owned by the app service principal      │
-   └──────────┬───────────────┘  │   • entries/sessions scoped by actor_id     │
-              ▲ synced tables     │   • Databricks runs the Postgres for you    │
-   ┌──────────────────────────┐  └───────────────────────────────────────────┘
-   │  Unity Catalog / Lakehouse│   Model Serving: an LLM + an embedding model
-   └──────────────────────────┘
+ PR opened / updated                       PR closed (merged or not)
+ ───────────────────                       ─────────────────────────
+ create  ci-pr-<N>  from production         delete ci-pr-<N>
+ migrate ci-pr-<N>  (sql/migrations)
+ pytest  against ci-pr-<N>  (real rows)    merged to main
+ comment results on the PR                 ──────────────
+                                           ⏸  approve `production` environment
+                                           migrate production (the same files)
+                                           databricks bundle deploy -t prod
 ```
 
-- **Operational data** (customers, tickets, knowledge base) lives in *your* Lakebase project. The app
-connects to it like any Postgres database via `databricks_ai_bridge.lakebase.LakebasePool`, using a
-short-lived Databricks OAuth token in place of a password (auto-rotated — no stored secret).
-- **Session + memory** live in a Databricks-managed project. The app never opens a database to it;
-every call is a REST request over an auto-rotated OAuth token. Databricks provisions and runs that
-database.
-- **Identity.** The user that scopes memory comes from the authenticated request header
-(`X-Forwarded-Email`), never from client input.
+Why this matters: tests run against **production-shaped data**, not an empty schema. In the demo, a
+migration adds `sla_hours INT NOT NULL` without a default. That works on an empty test database,
+but it **fails on the PR's branch** because production already has tickets. You find out in CI, and
+production never sees it.
 
+| Workflow | Trigger | What it does |
+|---|---|---|
+| [`pr-branch.yml`](.github/workflows/pr-branch.yml) | PR opened/updated | branch, migrate, test, PR comment |
+| [`pr-cleanup.yml`](.github/workflows/pr-cleanup.yml) | PR closed | delete the PR's branch |
+| [`deploy.yml`](.github/workflows/deploy.yml) | push to `main` | approval gate, migrate prod, bundle deploy, smoke test |
+| [`branch-sweeper.yml`](.github/workflows/branch-sweeper.yml) | nightly | delete branches of closed PRs (branches also have a 24h TTL) |
 
-
-## Repo layout
-
-
-| Path                                 | What                                                                                            |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `agent_server/agent.py`              | The agent: `Agent` + `Runner`, model routed at Databricks serving, `@invoke`/`@stream` handlers |
-| `agent_server/managed.py`            | Databricks managed session + memory (session store adapter, memory tools)                       |
-| `agent_server/tools_support.py`      | Agent tools: `search_customer`, `search_kb`, `propose_ticket_action`                            |
-| `agent_server/db.py` · `search.py`   | Lakebase access (`LakebasePool`) + hybrid KB search (vector + BM25, RRF)                        |
-| `agent_server/webapp.py` · `static/` | `/api/*` dashboard routes + the single-page UI                                                  |
-| `agent_server/start_server.py`       | MLflow `AgentServer` entry point (serves `/responses` + `/invocations`)                         |
-| `app.yaml` · `databricks.yml`        | App run spec + Databricks Asset Bundle (resources, env, variables)                              |
-| `scripts/`                           | Setup + deploy helpers (synced tables, seed, deploy pipeline, tests)                            |
-| `sql/` · `lakehouse/`                | Operational table DDL/seed, KB search indexes, and the lakehouse KB build                       |
-
-
-
-
-## Prerequisites
-
-- A Databricks workspace with **Lakebase**, **Model Serving** (an LLM + an embedding endpoint), and
-**managed sessions/memory** available.
-- The [Databricks CLI](https://docs.databricks.com/dev-tools/cli/) authenticated to your workspace.
-- `[uv](https://docs.astral.sh/uv/)` for local Python.
-
-
-
-## Quick start
+### The same scripts run locally and in CI
 
 ```bash
-cp .env.example .env          # fill in your profile, Lakebase project, UC catalog, endpoints
-uv sync                       # install dependencies
+cp .env.example .env            # fill in your profile / project
+uv sync
 
-# Run locally (serves the dashboard + agent on http://localhost:8000)
-uv run start-server
-
-# Deploy to a Databricks App (Databricks Asset Bundle)
-databricks bundle deploy --var app_name=customer-support-copilot
+uv run python scripts/branch.py create dev-$USER                          # your own copy of prod
+LAKEBASE_AUTOSCALING_BRANCH=dev-$USER uv run python scripts/migrate.py    # apply migrations
+LAKEBASE_AUTOSCALING_BRANCH=dev-$USER uv run pytest tests -n0             # test on real data
+uv run python scripts/branch.py delete dev-$USER
 ```
 
-See **[DEPLOY.md](DEPLOY.md)** for the full deploy walkthrough (synced tables, seed data, resource
-binding, and granting the app's service principal access to Lakebase).
+`LAKEBASE_AUTOSCALING_BRANCH` is the only thing that changes between your laptop, a PR, and
+production. The app's `db.py` connects to whichever branch it names.
 
-## Built on
+### One-time setup (for your own copy)
 
-- [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/) (`openai-agents`)
-- `[databricks-openai](https://pypi.org/project/databricks-openai/)` — routes the SDK at Databricks model serving
-- [Databricks AgentKit SDK](https://docs.databricks.com/aws/en/agents/agent-memory/) — managed sessions + memory
-([managed sessions](https://docs.databricks.com/aws/en/agents/agent-memory/managed-sessions),
-[managed memory](https://docs.databricks.com/aws/en/agents/agent-memory/managed-memory))
-- `[databricks-ai-bridge](https://pypi.org/project/databricks-ai-bridge/)` — Lakebase connection pool
-- [MLflow](https://mlflow.org/) `ResponsesAgent` — standard agent interface + tracing
-- Starts from the `agent-openai-agents-sdk` [template](https://github.com/databricks/app-templates/tree/main/agent-openai-agents-sdk)
+Prerequisites: a workspace with Lakebase Autoscaling, the Episode 2 app's project and data (see
+[DEPLOY.md](DEPLOY.md)), the `databricks` CLI, `uv`, and `gh`.
 
+```bash
+uv run python scripts/setup_ci.py --github-repo <you>/building-on-lakebase
+```
+
+This is idempotent. It:
+
+1. Creates the CI **service principal** and gives it `CAN_MANAGE` on the Lakebase project, so it can create and delete branches.
+2. Adds Postgres roles:
+   - **`support_owner`** owns the operational tables. You and CI are members, so either of you can run migrations.
+   - **`support_app`** holds the deployed app's privileges.
+
+   Branches copy roles, so every `ci-pr-*` branch has them too.
+3. Sets these on the GitHub repo:
+   - Secrets: `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`, `DATABRICKS_CLIENT_SECRET`. The secret goes straight to `gh secret set` and is never printed.
+   - Variables: the non-secret config.
+   - A `production` **environment** with you as required reviewer.
+
+> PRs from forks don't get repository secrets, so run the workflows in **your own** repo.
+
+### Re-running the demo
+
+```bash
+uv run python scripts/demo_reset.py --all          # dry run: shows what would change
+uv run python scripts/demo_reset.py --all --yes    # reset branches, prod schema/data, git, app
+
+git checkout -b feature/priority-escalation ep3-feature-broken
+git push -u origin HEAD
+gh pr create --fill                                # CI goes red: NOT NULL without a default
+
+git checkout ep3-feature-fixed -- .                # the fix: add DEFAULT 24
+git commit -am "Add default for sla_hours"
+git push                                           # CI goes green
+```
+
+Tags: `ep3-start` (tooling, before the feature), `ep3-feature-broken`, `ep3-feature-fixed`.
+
+## Security
+
+No credentials are in this repo. Local config lives in `.env`, which is git-ignored. Copy
+[`.env.example`](.env.example) to create it. CI authenticates as a service principal through GitHub
+secrets. Every database connection uses short-lived Lakebase OAuth tokens, with no passwords.

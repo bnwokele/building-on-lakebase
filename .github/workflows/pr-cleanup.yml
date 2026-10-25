@@ -1,0 +1,29 @@
+# Tear down the PR's Lakebase branch when the PR closes — merged or not — so nothing is left
+# behind. (The branch also has a TTL, and branch-sweeper.yml catches anything missed.)
+name: PR database cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+  DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+  LAKEBASE_AUTOSCALING_PROJECT: ${{ vars.LAKEBASE_AUTOSCALING_PROJECT }}
+
+jobs:
+  delete-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv sync
+      - name: Delete Lakebase branch
+        run: uv run python scripts/branch.py delete "ci-pr-${{ github.event.number }}"
