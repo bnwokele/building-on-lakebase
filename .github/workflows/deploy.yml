@@ -58,7 +58,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
+      # Pinned: databricks.yml uses the Terraform engine (see the note there), which CLI v1.20+ removed.
       - uses: databricks/setup-cli@main
+        with:
+          version: 1.19.0
 
       - name: Install dependencies
         run: uv sync
