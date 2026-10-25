@@ -31,7 +31,8 @@ def list_customers():
 @router.get("/tickets")
 def list_tickets(customer_id: int):
     return db.query(
-        "SELECT id, subject, status, priority FROM tickets WHERE customer_id = %s "
+        "SELECT id, subject, status, priority, sla_hours, escalated_at FROM tickets "
+        "WHERE customer_id = %s "
         "ORDER BY created_at DESC",
         (customer_id,),
     )
@@ -70,6 +71,19 @@ class StatusIn(BaseModel):
 @router.post("/tickets/status")
 def update_status(payload: StatusIn):
     db.execute("UPDATE tickets SET status = %s WHERE id = %s", (payload.status, payload.ticket_id))
+    return {"ok": True}
+
+
+class PriorityIn(BaseModel):
+    ticket_id: int
+    priority: str
+    author: str = "human"
+
+
+@router.post("/tickets/priority")
+def update_priority(payload: PriorityIn):
+    # The tickets_escalate trigger (migration 002) may raise high -> urgent for enterprise customers.
+    db.execute("UPDATE tickets SET priority = %s WHERE id = %s", (payload.priority, payload.ticket_id))
     return {"ok": True}
 
 
