@@ -70,10 +70,21 @@ REPO_VARIABLES = {
 def ensure_sp(w: WorkspaceClient):
     found = list(w.service_principals.list(filter=f'displayName eq "{SP_NAME}"'))
     if found:
-        print(f"  ✓ service principal exists: {SP_NAME} ({found[0].application_id})")
-        return found[0]
-    sp = w.service_principals.create(display_name=SP_NAME, active=True)
-    print(f"  ✓ created service principal: {SP_NAME} ({sp.application_id})")
+        sp = found[0]
+        print(f"  ✓ service principal exists: {SP_NAME} ({sp.application_id})")
+    else:
+        sp = w.service_principals.create(display_name=SP_NAME, active=True)
+        print(f"  ✓ created service principal: {SP_NAME} ({sp.application_id})")
+    # The Lakebase/Apps/bundle APIs reject principals without the workspace-access entitlement.
+    w.api_client.do(
+        "PATCH",
+        f"/api/2.0/preview/scim/v2/ServicePrincipals/{sp.id}",
+        body={
+            "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+            "Operations": [{"op": "add", "path": "entitlements", "value": [{"value": "workspace-access"}]}],
+        },
+    )
+    print("  ✓ entitlement: workspace-access")
     return sp
 
 
