@@ -12,7 +12,7 @@
   --app       redeploy the prod app from `ep3-start` (no priority badge) with your CLI profile
 
 Ends with a check: no ci-pr-* branches, no sla_hours column, #482 is `high`, app shows `high`.
-Then re-run the demo:  git checkout -b feature/priority-escalation ep3-feature-broken && git push -u origin HEAD
+Then re-run the demo:  git checkout -b feature/priority-escalation ep3-feature && git push -u origin HEAD && gh pr create --fill
 """
 
 from __future__ import annotations

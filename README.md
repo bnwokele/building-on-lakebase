@@ -32,10 +32,10 @@ seconds and scales to zero when idle. This repo uses a branch for every PR:
                                            databricks bundle deploy -t prod
 ```
 
-Why this matters: tests run against **production-shaped data**, not an empty schema. In the demo, a
-migration adds `sla_hours INT NOT NULL` without a default. That works on an empty test database,
-but it **fails on the PR's branch** because production already has tickets. You find out in CI, and
-production never sees it.
+Why this matters: the PR's schema change and app change are tried on a **real copy of production
+data**, in isolation, before anything is merged. Production keeps serving the whole time, and the
+branch is thrown away when the PR closes. Preview the app against the branch with
+`scripts/preview_branch.py ci-pr-<N>`.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
@@ -83,22 +83,22 @@ This is idempotent. It:
 
 > PRs from forks don't get repository secrets, so run the workflows in **your own** repo.
 
-### Re-running the demo
+### Running the Episode 3 demo
 
 ```bash
 uv run python scripts/demo_reset.py --all          # dry run: shows what would change
 uv run python scripts/demo_reset.py --all --yes    # reset branches, prod schema/data, git, app
 
-git checkout -b feature/priority-escalation ep3-feature-broken
+git checkout -b feature/priority-escalation ep3-feature
 git push -u origin HEAD
-gh pr create --fill                                # CI goes red: NOT NULL without a default
+gh pr create --fill                                # CI creates ci-pr-<N>, migrates, tests (~30 s)
 
-git checkout ep3-feature-fixed -- .                # the fix: add DEFAULT 24
-git commit -am "Add default for sla_hours"
-git push                                           # CI goes green
+uv run python scripts/preview_branch.py ci-pr-<N>  # http://localhost:8001: the feature on the branch
 ```
 
-Tags: `ep3-start` (tooling, before the feature), `ep3-feature-broken`, `ep3-feature-fixed`.
+Then merge the PR and approve the `production` deployment: the same migration runs on production
+and the app is redeployed. Tags: `ep3-start` (tooling, before the feature) and `ep3-feature` (the
+feature: migration 002, the badge, and tests).
 
 ## Security
 
