@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).parent.parent
 load_dotenv(ROOT / ".env")
+sys.stdout.reconfigure(line_buffering=True)  # keep stdout/stderr in order when CI pipes to `tee`
 sys.path.insert(0, str(ROOT))
 
 from agent_server import db  # noqa: E402
