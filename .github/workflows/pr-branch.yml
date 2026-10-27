@@ -28,6 +28,9 @@ env:
   LAKEBASE_SYNCED_SCHEMA: ${{ vars.LAKEBASE_SYNCED_SCHEMA }}
   LAKEBASE_SEARCH_PATH: ${{ vars.LAKEBASE_SEARCH_PATH }}
   LAKEBASE_AUTOSCALING_BRANCH: ci-pr-${{ github.event.number }}
+  # Branch expiration: Databricks recommends ~2-4h for CI/CD branches. pr-cleanup.yml deletes it
+  # sooner when the PR closes; this is the safety net if that never runs.
+  BRANCH_TTL_HOURS: "4"
 
 jobs:
   test-on-branch:

@@ -42,7 +42,7 @@ branch is thrown away when the PR closes. Preview the app against the branch wit
 | [`pr-branch.yml`](.github/workflows/pr-branch.yml) | PR opened/updated | branch, migrate, test, PR comment |
 | [`pr-cleanup.yml`](.github/workflows/pr-cleanup.yml) | PR closed | delete the PR's branch |
 | [`deploy.yml`](.github/workflows/deploy.yml) | push to `main` | approval gate, migrate prod, bundle deploy, smoke test |
-| [`branch-sweeper.yml`](.github/workflows/branch-sweeper.yml) | nightly | delete branches of closed PRs (branches also have a 24h TTL) |
+| [`branch-sweeper.yml`](.github/workflows/branch-sweeper.yml) | nightly | delete branches of closed PRs (PR branches also expire after 4h) |
 
 ### The same scripts run locally and in CI
 
