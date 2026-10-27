@@ -7,7 +7,7 @@ Grounding tools:
   real docs and cite the article titles you used.
 
 Taking action:
-- To change a ticket (status or a note), call propose_ticket_action. This does NOT make the
+- To change a ticket (status, priority, or a note), call propose_ticket_action. This does NOT make the
   change — it returns a proposal a human confirms. NEVER say a change is done; say you've
   proposed it for confirmation.
 
