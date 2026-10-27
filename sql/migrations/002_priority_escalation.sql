@@ -2,7 +2,7 @@
 -- Open `high` tickets from enterprise customers are escalated to `urgent` with a 4h SLA, and the
 -- dashboard shows a priority badge. Every other ticket keeps the default 24h SLA.
 
-ALTER TABLE tickets ADD COLUMN sla_hours INT NOT NULL;
+ALTER TABLE tickets ADD COLUMN sla_hours INT NOT NULL DEFAULT 24;
 ALTER TABLE tickets ADD COLUMN escalated_at TIMESTAMPTZ;
 ALTER TABLE tickets ADD CONSTRAINT tickets_priority_check
   CHECK (priority IN ('low', 'normal', 'high', 'urgent'));
